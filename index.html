@@ -1,1 +1,563 @@
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>젤리 바운스</title>
+    <style>
+        /* 기본 스타일 및 폰트 설정 */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #282c34; /* 어두운 배경 */
+            font-family: 'Press Start 2P', cursive; /* 픽셀 폰트 (CDN 사용) */
+            color: #eee;
+            overflow: hidden; /* 스크롤 방지 */
+            flex-direction: column;
+        }
+
+        /* 픽셀 폰트 로드 */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        /* 캔버스 스타일 */
+        canvas {
+            background-color: #4a4f57; /* 게임 배경색 */
+            border: 4px solid #1a1e24; /* 테두리 */
+            image-rendering: optimizeSpeed; /* 픽셀 아트 렌더링 */
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: optimize-contrast;
+            image-rendering: pixelated; /* 픽셀 아트 렌더링 */
+            -ms-interpolation-mode: nearest-neighbor;
+            display: block; /* 여백 제거 */
+            max-width: 90vw; /* 화면 너비에 맞춤 */
+            max-height: 80vh; /* 화면 높이에 맞춤 */
+            aspect-ratio: 4 / 3; /* 4:3 비율 유지 */
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5); /* 그림자 */
+            border-radius: 8px; /* 둥근 모서리 */
+        }
+
+        /* 게임 메시지 스타일 */
+        #game-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2em;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px 40px;
+            border-radius: 10px;
+            border: 2px solid #eee;
+            z-index: 10;
+            display: none; /* 초기에는 숨김 */
+            white-space: nowrap; /* 줄바꿈 방지 */
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+        }
+
+        /* 스테이지 정보 */
+        #stage-info {
+            margin-top: 10px;
+            font-size: 1.2em;
+            text-align: center;
+            color: #eee;
+        }
+    </style>
+</head>
+<body>
+    <div id="stage-info">Stage: 1 / 7</div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="game-message"></div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameMessage = document.getElementById('game-message');
+        const stageInfo = document.getElementById('stage-info');
+
+        // Canvas size settings (using smaller base dimensions for pixel art scaling)
+        const PIXEL_SIZE = 4; // Size of each "pixel"
+        const BASE_WIDTH = 160; // Base width in pixel units
+        const BASE_HEIGHT = 120; // Base height in pixel units
+        canvas.width = BASE_WIDTH * PIXEL_SIZE;
+        canvas.height = BASE_HEIGHT * PIXEL_SIZE;
+
+        // Game variables
+        let jellyBall = {
+            x: BASE_WIDTH / 2,
+            y: BASE_HEIGHT - 10 - 5, // Above ground, by its radius
+            radius: 5,
+            velocityY: 0,
+            isMovingLeft: false,
+            isMovingRight: false,
+            isBouncingIdle: true, // Bounces constantly when idle
+            idleBounceAmplitude: 0.5, // Idle bounce height
+            idleBounceSpeed: 0.05, // Idle bounce speed
+            moveSpeed: 1, // Left/right movement speed
+            jumpPower: -4.5, // Jump force (increased for higher jumps)
+            gravity: 0.2, // Gravity (adjusted for jump power)
+            onGround: false,
+            pixelMap: [] // Jelly ball pixel map
+        };
+
+        let groundY = BASE_HEIGHT - 10; // Ground Y position
+        let obstacles = []; // Traps, stairs, blackhole
+        let currentStage = 1;
+        const MAX_STAGES = 7;
+        let gameOver = false;
+        let gameStarted = false;
+
+        // Define jelly ball pixel map (circular shape)
+        // Each array represents the y-axis, 1 for pixel, 0 for empty space
+        function generateJellyBallPixelMap(radius) {
+            const map = [];
+            for (let y = -radius; y <= radius; y++) {
+                const row = [];
+                for (let x = -radius; x <= radius; x++) {
+                    // Circle equation (x^2 + y^2 <= r^2)
+                    if (x * x + y * y <= radius * radius) {
+                        row.push(1);
+                    } else {
+                        row.push(0);
+                    }
+                }
+                map.push(row);
+            }
+            return map;
+        }
+        jellyBall.pixelMap = generateJellyBallPixelMap(jellyBall.radius);
+
+
+        // --- Drawing functions ---
+
+        // Draw a single pixel
+        function drawPixel(context, x, y, color) {
+            context.fillStyle = color;
+            context.fillRect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+        }
+
+        // Draw jelly ball (pixel art)
+        function drawJellyBall() {
+            const map = jellyBall.pixelMap;
+            const centerX = jellyBall.x;
+            let centerY = jellyBall.y;
+
+            // Apply idle bounce effect when on ground and not moving
+            if (jellyBall.isBouncingIdle && jellyBall.onGround && !jellyBall.isMovingLeft && !jellyBall.isMovingRight) {
+                centerY += Math.sin(Date.now() * jellyBall.idleBounceSpeed) * jellyBall.idleBounceAmplitude;
+            }
+
+            for (let y = 0; y < map.length; y++) {
+                for (let x = 0; x < map[y].length; x++) {
+                    if (map[y][x] === 1) {
+                        // Jelly ball color (slightly transparent)
+                        const color = `rgba(100, 200, 255, 0.9)`;
+                        drawPixel(ctx, centerX + x - jellyBall.radius, centerY + y - jellyBall.radius, color);
+                    }
+                }
+            }
+        }
+
+        // Draw ground
+        function drawGround() {
+            ctx.fillStyle = '#6b4f4f'; // Earth color
+            ctx.fillRect(0, groundY * PIXEL_SIZE, canvas.width, (BASE_HEIGHT - groundY) * PIXEL_SIZE);
+
+            // Add pixel texture to the ground
+            for (let y = groundY; y < BASE_HEIGHT; y++) {
+                for (let x = 0; x < BASE_WIDTH; x++) {
+                    if (Math.random() < 0.1) { // 10% chance for darker pixel
+                        drawPixel(ctx, x, y, '#5a4242');
+                    }
+                }
+            }
+        }
+
+        // Draw traps, stairs, blackhole
+        function drawObstacles() {
+            obstacles.forEach(obj => {
+                if (obj.type === 'spike') {
+                    // Spike trap (triangle)
+                    ctx.fillStyle = '#ff4500'; // Orange
+                    ctx.beginPath();
+                    ctx.moveTo(obj.x * PIXEL_SIZE, obj.y * PIXEL_SIZE);
+                    ctx.lineTo((obj.x + obj.width / 2) * PIXEL_SIZE, (obj.y - obj.height) * PIXEL_SIZE);
+                    ctx.lineTo((obj.x + obj.width) * PIXEL_SIZE, obj.y * PIXEL_SIZE);
+                    ctx.closePath();
+                    ctx.fill();
+                } else if (obj.type === 'pit') {
+                    // Pit trap (black rectangle)
+                    ctx.fillStyle = '#1a1a1a'; // Black
+                    ctx.fillRect(obj.x * PIXEL_SIZE, obj.y * PIXEL_SIZE, obj.width * PIXEL_SIZE, obj.height * PIXEL_SIZE);
+                } else if (obj.type === 'stair') {
+                    // Stair (grey rectangle)
+                    ctx.fillStyle = '#888888'; // Grey
+                    ctx.fillRect(obj.x * PIXEL_SIZE, obj.y * PIXEL_SIZE, obj.width * PIXEL_SIZE, obj.height * PIXEL_SIZE);
+                } else if (obj.type === 'blackhole') {
+                    // Blackhole (black circle)
+                    ctx.fillStyle = '#000000'; // Black
+                    ctx.beginPath();
+                    ctx.arc((obj.x + obj.width / 2) * PIXEL_SIZE, (obj.y + obj.height / 2) * PIXEL_SIZE, (obj.width / 2) * PIXEL_SIZE, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Swirl effect around blackhole (pixels)
+                    for (let i = 0; i < 50; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const dist = Math.random() * (obj.width / 2 + 5); // Slightly larger than blackhole
+                        const px = (obj.x + obj.width / 2 + Math.cos(angle) * dist) * PIXEL_SIZE;
+                        const py = (obj.y + obj.height / 2 + Math.sin(angle) * dist) * PIXEL_SIZE;
+                        drawPixel(ctx, px / PIXEL_SIZE, py / PIXEL_SIZE, `rgba(0,0,0, ${0.5 + Math.random() * 0.5})`);
+                    }
+                }
+            });
+        }
+
+        // --- Game logic functions ---
+
+        // Initialize game
+        function initializeGame() {
+            jellyBall.x = BASE_WIDTH / 2;
+            jellyBall.y = groundY - jellyBall.radius;
+            jellyBall.velocityY = 0;
+            jellyBall.isMovingLeft = false;
+            jellyBall.isMovingRight = false;
+            jellyBall.onGround = false;
+            jellyBall.isBouncingIdle = true; // Always bounce before game starts
+            currentStage = 1;
+            gameOver = false;
+            gameStarted = false;
+            gameMessage.style.display = 'none';
+            stageInfo.textContent = `Stage: ${currentStage} / ${MAX_STAGES}`;
+            generateStage();
+        }
+
+        // Generate stage
+        function generateStage() {
+            obstacles = [];
+            const groundLevel = groundY; // Ground Y position
+
+            // Generate blackhole (always present)
+            const blackholeWidth = 10;
+            const blackholeHeight = 10;
+            let blackholeX = Math.floor(Math.random() * (BASE_WIDTH - blackholeWidth - 20)) + 10; // Keep away from edges
+            let blackholeY = groundLevel - blackholeHeight; // Can be on ground or on stairs
+            obstacles.push({ type: 'blackhole', x: blackholeX, y: blackholeY, width: blackholeWidth, height: blackholeHeight });
+
+            // Generate obstacles (spikes, pits, stairs)
+            const numObstacles = 5 + currentStage; // More obstacles with higher stages
+            for (let i = 0; i < numObstacles; i++) {
+                const type = ['spike', 'pit', 'stair'][Math.floor(Math.random() * 3)];
+                let obsX = Math.floor(Math.random() * (BASE_WIDTH - 20)) + 10;
+                let obsY = groundLevel;
+                let obsWidth = 0;
+                let obsHeight = 0;
+
+                if (type === 'spike') {
+                    obsWidth = Math.floor(Math.random() * 5) + 3; // 3-7 pixel width
+                    obsHeight = Math.floor(Math.random() * 3) + 3; // 3-5 pixel height
+                    obsY = groundLevel; // Spikes are on the ground
+                } else if (type === 'pit') {
+                    obsWidth = Math.floor(Math.random() * 8) + 5; // 5-12 pixel width
+                    obsHeight = 10; // Pit depth
+                    obsY = groundLevel; // Pits are on the ground
+                } else if (type === 'stair') {
+                    obsWidth = Math.floor(Math.random() * 8) + 5; // 5-12 pixel width
+                    obsHeight = Math.floor(Math.random() * 10) + 5; // 5-15 pixel height
+                    obsY = groundLevel - obsHeight; // Stairs rise from the ground
+                }
+
+                // Adjust to avoid overlapping with blackhole
+                const overlap = obstacles.some(existingObs => {
+                    if (existingObs.type === 'blackhole') {
+                        // Calculate distance between blackhole and new obstacle
+                        const dist = Math.sqrt(
+                            Math.pow((obsX + obsWidth / 2) - (existingObs.x + existingObs.width / 2), 2) +
+                            Math.pow((obsY + obsHeight / 2) - (existingObs.y + existingObs.height / 2), 2)
+                        );
+                        // Consider it overlapping if too close (approximate bounding box)
+                        return dist < (obsWidth / 2 + existingObs.width / 2 + 10); // 10 pixel buffer
+                    }
+                    return false;
+                });
+
+                if (!overlap) {
+                    obstacles.push({ type: type, x: obsX, y: obsY, width: obsWidth, height: obsHeight });
+                }
+            }
+
+            // Ensure blackhole is always reachable by guaranteeing a stair near it
+            let hasStairToBlackhole = false;
+            for (let i = 0; i < obstacles.length; i++) {
+                if (obstacles[i].type === 'stair') {
+                    const stair = obstacles[i];
+                    const blackhole = obstacles.find(o => o.type === 'blackhole');
+                    if (blackhole && Math.abs((stair.x + stair.width / 2) - (blackhole.x + blackhole.width / 2)) < 30 &&
+                        stair.y >= blackhole.y) { // Stair is lower or at the same height as blackhole
+                        hasStairToBlackhole = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasStairToBlackhole && currentStage > 1) { // First stage doesn't require a stair
+                const blackhole = obstacles.find(o => o.type === 'blackhole');
+                if (blackhole) {
+                    const stairWidth = Math.floor(Math.random() * 8) + 5;
+                    const stairHeight = Math.floor(Math.random() * 10) + 5;
+                    const stairX = blackhole.x + Math.floor(Math.random() * 20) - 10; // Near blackhole
+                    const stairY = groundLevel - stairHeight;
+                    obstacles.push({ type: 'stair', x: stairX, y: stairY, width: stairWidth, height: stairHeight });
+                }
+            }
+        }
+
+
+        // Collision detection function (AABB collision for simplicity, considering jelly ball as AABB)
+        function checkCollision(objA, objB) {
+            const ballLeft = jellyBall.x - jellyBall.radius;
+            const ballRight = jellyBall.x + jellyBall.radius;
+            const ballTop = jellyBall.y - jellyBall.radius;
+            const ballBottom = jellyBall.y + jellyBall.radius;
+
+            const objLeft = objB.x;
+            const objRight = objB.x + objB.width;
+            const objTop = objB.y;
+            const objBottom = objB.y + objB.height;
+
+            return ballLeft < objRight &&
+                   ballRight > objLeft &&
+                   ballTop < objBottom &&
+                   ballBottom > objTop;
+        }
+
+        // Game update
+        function updateGame() {
+            if (gameOver || !gameStarted) {
+                // When game over or not started, only maintain idle bounce
+                if (jellyBall.isBouncingIdle) {
+                    jellyBall.onGround = (jellyBall.y + jellyBall.radius >= groundY);
+                    if (jellyBall.onGround) {
+                        jellyBall.y = groundY - jellyBall.radius; // Fix to ground
+                    }
+                }
+                return;
+            }
+
+            // Apply gravity
+            jellyBall.velocityY += jellyBall.gravity;
+            jellyBall.y += jellyBall.velocityY;
+
+            // Left/right movement
+            if (jellyBall.isMovingLeft) {
+                jellyBall.x -= jellyBall.moveSpeed;
+            }
+            if (jellyBall.isMovingRight) {
+                jellyBall.x += jellyBall.moveSpeed;
+            }
+
+            // Screen boundary collision
+            if (jellyBall.x - jellyBall.radius < 0) {
+                jellyBall.x = jellyBall.radius;
+            }
+            if (jellyBall.x + jellyBall.radius > BASE_WIDTH) {
+                jellyBall.x = BASE_WIDTH - jellyBall.radius;
+            }
+
+            // Ground collision
+            if (jellyBall.y + jellyBall.radius >= groundY) {
+                jellyBall.y = groundY - jellyBall.radius;
+                jellyBall.velocityY = -jellyBall.velocityY * 0.85; // Bounce (increased elasticity)
+                if (Math.abs(jellyBall.velocityY) < 0.5) { // Stop if too weak
+                    jellyBall.velocityY = 0;
+                    jellyBall.onGround = true;
+                }
+                jellyBall.isBouncingIdle = true; // Start idle bounce when on ground
+            } else {
+                jellyBall.onGround = false;
+                jellyBall.isBouncingIdle = false; // Stop idle bounce when in air
+            }
+
+            // Obstacle collision detection
+            obstacles.forEach(obj => {
+                if (checkCollision(jellyBall, obj)) {
+                    if (obj.type === 'spike') {
+                        // Spike trap: Game Over
+                        setGameOver('Game Over! (Spikes)');
+                    } else if (obj.type === 'pit') {
+                        // Pit trap: Game Over
+                        setGameOver('Game Over! (Pit)');
+                    } else if (obj.type === 'stair') {
+                        // Stair: Jump if falling onto it
+                        if (jellyBall.y + jellyBall.radius - jellyBall.velocityY < obj.y) { // Falling onto stair from above
+                            jellyBall.y = obj.y - jellyBall.radius;
+                            jellyBall.velocityY = -jellyBall.jumpPower * 0.8; // Bounce off stair
+                            jellyBall.onGround = true;
+                        }
+                    } else if (obj.type === 'blackhole') {
+                        // Blackhole: Stage Clear
+                        if (currentStage < MAX_STAGES) {
+                            currentStage++;
+                            stageInfo.textContent = `Stage: ${currentStage} / ${MAX_STAGES}`;
+                            setGameMessage('Stage Clear!', 'green');
+                            setTimeout(() => {
+                                gameMessage.style.display = 'none';
+                                jellyBall.x = BASE_WIDTH / 2;
+                                jellyBall.y = groundY - jellyBall.radius;
+                                jellyBall.velocityY = 0;
+                                generateStage();
+                            }, 1500); // Next stage after 1.5 seconds
+                        } else {
+                            setGameOver('You Won the Game!', 'gold');
+                        }
+                    }
+                }
+            });
+        }
+
+        // Set Game Over message
+        function setGameOver(message, color = 'red') {
+            gameOver = true;
+            gameMessage.textContent = message + (color === 'red' ? ' Press Space/Touch to Restart' : '');
+            gameMessage.style.color = color;
+            gameMessage.style.display = 'block';
+            jellyBall.isBouncingIdle = true; // Maintain idle bounce even when game over
+        }
+
+        // Set game message (e.g., Stage Clear)
+        function setGameMessage(message, color = 'white') {
+            gameMessage.textContent = message;
+            gameMessage.style.color = color;
+            gameMessage.style.display = 'block';
+        }
+
+        // Game loop
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
+
+            updateGame();
+            drawGround();
+            drawObstacles();
+            drawJellyBall();
+
+            requestAnimationFrame(animate);
+        }
+
+        // --- Event Listeners ---
+
+        // Keyboard input (PC)
+        document.addEventListener('keydown', (e) => {
+            if (gameOver && (e.code === 'Space' || e.key === ' ')) {
+                initializeGame();
+                gameStarted = true; // Restart game
+                return;
+            }
+            if (!gameStarted && (e.code === 'Space' || e.key === ' ')) {
+                gameStarted = true;
+                gameMessage.style.display = 'none';
+                jellyBall.isBouncingIdle = false; // Stop idle bounce when game starts
+                return;
+            }
+
+            if (!gameOver && gameStarted) {
+                if (e.key === 'ArrowLeft') {
+                    jellyBall.isMovingLeft = true;
+                } else if (e.key === 'ArrowRight') {
+                    jellyBall.isMovingRight = true;
+                } else if (e.key === 'ArrowUp' && jellyBall.onGround) { // Jump with Up Arrow
+                    jellyBall.velocityY = jellyBall.jumpPower;
+                    jellyBall.onGround = false;
+                    jellyBall.isBouncingIdle = false; // Stop idle bounce when jumping
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (!gameOver && gameStarted) {
+                if (e.key === 'ArrowLeft') {
+                    jellyBall.isMovingLeft = false;
+                } else if (e.key === 'ArrowRight') {
+                    jellyBall.isMovingRight = false;
+                }
+            }
+        });
+
+        // Touch input (Mobile)
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent default scrolling
+
+            if (gameOver) {
+                initializeGame();
+                gameStarted = true; // Restart game
+                return;
+            }
+            if (!gameStarted) {
+                gameStarted = true;
+                gameMessage.style.display = 'none';
+                jellyBall.isBouncingIdle = false; // Stop idle bounce when game starts
+                return;
+            }
+
+            if (!gameOver && gameStarted) {
+                const touchX = e.touches[0].clientX;
+                const touchY = e.touches[0].clientY;
+                const canvasRect = canvas.getBoundingClientRect();
+
+                // Convert touch coordinates to canvas pixel coordinates
+                const scaleX = BASE_WIDTH / canvasRect.width;
+                const scaleY = BASE_HEIGHT / canvasRect.height;
+                const canvasTouchX = (touchX - canvasRect.left) * scaleX;
+                const canvasTouchY = (touchY - canvasRect.top) * scaleY;
+
+                // Check if touch is on the jelly ball for jumping
+                const distToJellyBall = Math.sqrt(
+                    Math.pow(canvasTouchX - jellyBall.x, 2) +
+                    Math.pow(canvasTouchY - jellyBall.y, 2)
+                );
+
+                if (distToJellyBall < jellyBall.radius + 5 && jellyBall.onGround) { // 5 pixel tolerance for touch
+                    jellyBall.velocityY = jellyBall.jumpPower;
+                    jellyBall.onGround = false;
+                    jellyBall.isBouncingIdle = false; // Stop idle bounce when jumping
+                    jellyBall.isMovingLeft = false; // Stop horizontal movement on jump
+                    jellyBall.isMovingRight = false;
+                } else {
+                    // Otherwise, handle left/right movement based on touch position
+                    const relativeX = touchX - canvasRect.left;
+                    if (relativeX < canvasRect.width / 2) {
+                        jellyBall.isMovingLeft = true;
+                        jellyBall.isMovingRight = false;
+                    } else {
+                        jellyBall.isMovingRight = true;
+                        jellyBall.isMovingLeft = false;
+                    }
+                }
+            }
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault(); // Prevent default scrolling
+            jellyBall.isMovingLeft = false;
+            jellyBall.isMovingRight = false;
+        });
+
+        // Initial start message
+        window.onload = () => {
+            initializeGame();
+            setGameMessage('Press Space or Touch to Start', 'white');
+            animate(); // Start game loop
+        };
+
+        // Window resize event (CSS handles responsive scaling)
+        window.addEventListener('resize', () => {
+            // Canvas scaling logic is fixed by PIXEL_SIZE and BASE_WIDTH/HEIGHT,
+            // so CSS max-width/max-height and aspect-ratio handle responsiveness.
+            // No additional JS scaling is needed here.
+        });
+
+    </script>
+</body>
+</html>
