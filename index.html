@@ -1,563 +1,411 @@
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>젤리 바운스</title>
-    <style>
-        /* 기본 스타일 및 폰트 설정 */
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            background-color: #282c34; /* 어두운 배경 */
-            font-family: 'Press Start 2P', cursive; /* 픽셀 폰트 (CDN 사용) */
-            color: #eee;
-            overflow: hidden; /* 스크롤 방지 */
-            flex-direction: column;
-        }
-
-        /* 픽셀 폰트 로드 */
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-
-        /* 캔버스 스타일 */
-        canvas {
-            background-color: #4a4f57; /* 게임 배경색 */
-            border: 4px solid #1a1e24; /* 테두리 */
-            image-rendering: optimizeSpeed; /* 픽셀 아트 렌더링 */
-            image-rendering: -moz-crisp-edges;
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: optimize-contrast;
-            image-rendering: pixelated; /* 픽셀 아트 렌더링 */
-            -ms-interpolation-mode: nearest-neighbor;
-            display: block; /* 여백 제거 */
-            max-width: 90vw; /* 화면 너비에 맞춤 */
-            max-height: 80vh; /* 화면 높이에 맞춤 */
-            aspect-ratio: 4 / 3; /* 4:3 비율 유지 */
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5); /* 그림자 */
-            border-radius: 8px; /* 둥근 모서리 */
-        }
-
-        /* 게임 메시지 스타일 */
-        #game-message {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 2em;
-            text-align: center;
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 20px 40px;
-            border-radius: 10px;
-            border: 2px solid #eee;
-            z-index: 10;
-            display: none; /* 초기에는 숨김 */
-            white-space: nowrap; /* 줄바꿈 방지 */
-            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
-        }
-
-        /* 스테이지 정보 */
-        #stage-info {
-            margin-top: 10px;
-            font-size: 1.2em;
-            text-align: center;
-            color: #eee;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>젤리공 바운스 미니게임</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body {
+      margin: 0; padding: 0; box-sizing: border-box;
+      width: 100vw; height: 100vh;
+      background: #23272f;
+      overflow: hidden;
+      font-family: 'Press Start 2P', '나눔고딕', NanumGothic, monospace;
+      color: #eee;
+      user-select: none;
+    }
+    #container {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+    }
+    #stage-info {
+      margin: 10px 0 5px 0;
+      font-size: 1.1em;
+      letter-spacing: 1px;
+    }
+    canvas {
+      background: #3e4150;
+      border: 4px solid #181a20;
+      border-radius: 12px;
+      box-shadow: 0 0 24px #000a;
+      display: block;
+      image-rendering: pixelated;
+      aspect-ratio: 4/3;
+      max-width: 93vw;
+      max-height: 70vh;
+    }
+    #message {
+      position: absolute;
+      top: 50%;  left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      border: 2px solid #fff;
+      border-radius: 12px;
+      font-size: 1.5em;
+      letter-spacing: 2px;
+      padding: 22px 45px;
+      z-index: 10;
+      display: none;
+      text-align: center;
+      box-shadow: 0 0 12px #fff5;
+      white-space: nowrap;
+    }
+  </style>
 </head>
 <body>
+  <div id="container">
     <div id="stage-info">Stage: 1 / 7</div>
-    <canvas id="gameCanvas"></canvas>
-    <div id="game-message"></div>
+    <canvas id="game" width="640" height="480"></canvas>
+    <div id="message"></div>
+  </div>
+  <script>
+    // --- 기본 세팅 ---
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const stageInfo = document.getElementById('stage-info');
+    const message = document.getElementById('message');
+    // 도트 픽셀 사이즈, 전체 도트 그리드 크기
+    const DOT = 4;
+    const GRID_W = canvas.width / DOT;   // 160
+    const GRID_H = canvas.height / DOT;  // 120
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const gameMessage = document.getElementById('game-message');
-        const stageInfo = document.getElementById('stage-info');
-
-        // Canvas size settings (using smaller base dimensions for pixel art scaling)
-        const PIXEL_SIZE = 4; // Size of each "pixel"
-        const BASE_WIDTH = 160; // Base width in pixel units
-        const BASE_HEIGHT = 120; // Base height in pixel units
-        canvas.width = BASE_WIDTH * PIXEL_SIZE;
-        canvas.height = BASE_HEIGHT * PIXEL_SIZE;
-
-        // Game variables
-        let jellyBall = {
-            x: BASE_WIDTH / 2,
-            y: BASE_HEIGHT - 10 - 5, // Above ground, by its radius
-            radius: 5,
-            velocityY: 0,
-            isMovingLeft: false,
-            isMovingRight: false,
-            isBouncingIdle: true, // Bounces constantly when idle
-            idleBounceAmplitude: 0.5, // Idle bounce height
-            idleBounceSpeed: 0.05, // Idle bounce speed
-            moveSpeed: 1, // Left/right movement speed
-            jumpPower: -4.5, // Jump force (increased for higher jumps)
-            gravity: 0.2, // Gravity (adjusted for jump power)
-            onGround: false,
-            pixelMap: [] // Jelly ball pixel map
-        };
-
-        let groundY = BASE_HEIGHT - 10; // Ground Y position
-        let obstacles = []; // Traps, stairs, blackhole
-        let currentStage = 1;
-        const MAX_STAGES = 7;
-        let gameOver = false;
-        let gameStarted = false;
-
-        // Define jelly ball pixel map (circular shape)
-        // Each array represents the y-axis, 1 for pixel, 0 for empty space
-        function generateJellyBallPixelMap(radius) {
-            const map = [];
-            for (let y = -radius; y <= radius; y++) {
-                const row = [];
-                for (let x = -radius; x <= radius; x++) {
-                    // Circle equation (x^2 + y^2 <= r^2)
-                    if (x * x + y * y <= radius * radius) {
-                        row.push(1);
-                    } else {
-                        row.push(0);
-                    }
-                }
-                map.push(row);
-            }
-            return map;
+    // --- 젤리공 도트맵 생성 ---
+    function makeJellyDotMap(r) {
+      const m = [];
+      for(let y = -r; y <= r; y++) {
+        let row = [];
+        for(let x = -r; x <= r; x++) {
+          if(x*x + y*y <= r*r) row.push(1);
+          else row.push(0);
         }
-        jellyBall.pixelMap = generateJellyBallPixelMap(jellyBall.radius);
+        m.push(row);
+      }
+      return m;
+    }
 
+    // --- 변수 및 오브젝트 ---
+    let stage = 1, maxStage = 7;
+    let gameState = 'ready'; // ready, play, over, clear, allclear
+    let obstacles = [];
+    let blackhole = null;
+    const ballR = 6;
+    const ballDotMap = makeJellyDotMap(ballR);
+    let ball = {};
+    let inputLeft = false, inputRight = false;
+    let idleBounceAngle = 0; // idle 바운스 효과
 
-        // --- Drawing functions ---
+    // --- 오브젝트 생성 ---
+    function resetBall() {
+      ball = {
+        x: Math.floor(GRID_W/2),
+        y: GRID_H-10-ballR,
+        vx: 0,
+        vy: 0,
+        onGround: false,
+        idleBounce: true,
+      };
+    }
 
-        // Draw a single pixel
-        function drawPixel(context, x, y, color) {
-            context.fillStyle = color;
-            context.fillRect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+    // --- 장애물/블랙홀/계단 생성 ---
+    function makeStage() {
+      obstacles = [];
+      // 블랙홀(랜덤, 바닥 위)
+      const bhW = 10, bhH = 10;
+      let bhX = Math.floor(Math.random() * (GRID_W-bhW-16)) + 8;
+      let bhY = GRID_H - 10 - bhH;
+      blackhole = {x: bhX, y: bhY, w: bhW, h: bhH};
+
+      // 장애물(스파이크, 구덩이, 계단)
+      let tries = 0;
+      while(obstacles.length < 5+stage && tries++<50) {
+        const t = Math.random();
+        let type = t<0.35 ? 'spike' : t<0.7 ? 'pit' : 'stair';
+        let w = type==='spike' ? Math.floor(Math.random()*3)+4 : Math.floor(Math.random()*5)+7;
+        let h = type==='spike' ? Math.floor(Math.random()*2)+4 : type==='stair' ? Math.floor(Math.random()*5)+6 : 10;
+        let x = Math.floor(Math.random()*(GRID_W-w-12))+6;
+        let y = type==='stair' ? GRID_H-10-h : GRID_H-10-h;
+        // 블랙홀과 너무 가까우면 무효
+        if(type!=='stair' && 
+          x+w > blackhole.x-10 && x < blackhole.x+blackhole.w+10) continue;
+        // 겹치는지 체크
+        let overlap = obstacles.some(o => 
+          x+w > o.x-2 && x < o.x+o.w+2 && y+h > o.y-2 && y < o.y+o.h+2
+        );
+        if(!overlap) obstacles.push({type, x, y, w, h});
+      }
+      // 블랙홀 근처에 계단 없으면 추가(2스테이지 이상)
+      if(stage>1) {
+        let hasStair = obstacles.some(o =>
+          o.type==='stair' &&
+          Math.abs(o.x+o.w/2 - (blackhole.x+blackhole.w/2)) < 18 &&
+          o.y >= blackhole.y
+        );
+        if(!hasStair) {
+          let stairW = Math.floor(Math.random()*5)+7, stairH = Math.floor(Math.random()*5)+7;
+          let stairX = blackhole.x + Math.floor(Math.random()*8)-4;
+          let stairY = GRID_H-10-stairH;
+          obstacles.push({type:'stair', x:stairX, y:stairY, w:stairW, h:stairH});
         }
+      }
+    }
 
-        // Draw jelly ball (pixel art)
-        function drawJellyBall() {
-            const map = jellyBall.pixelMap;
-            const centerX = jellyBall.x;
-            let centerY = jellyBall.y;
+    // --- 그리기 함수 ---
+    function drawPixel(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x*DOT, y*DOT, DOT, DOT);
+    }
 
-            // Apply idle bounce effect when on ground and not moving
-            if (jellyBall.isBouncingIdle && jellyBall.onGround && !jellyBall.isMovingLeft && !jellyBall.isMovingRight) {
-                centerY += Math.sin(Date.now() * jellyBall.idleBounceSpeed) * jellyBall.idleBounceAmplitude;
-            }
-
-            for (let y = 0; y < map.length; y++) {
-                for (let x = 0; x < map[y].length; x++) {
-                    if (map[y][x] === 1) {
-                        // Jelly ball color (slightly transparent)
-                        const color = `rgba(100, 200, 255, 0.9)`;
-                        drawPixel(ctx, centerX + x - jellyBall.radius, centerY + y - jellyBall.radius, color);
-                    }
-                }
-            }
+    function drawJellyBall() {
+      let cy = ball.y;
+      // idle 바운스 효과
+      if(ball.idleBounce && ball.onGround){
+        cy += Math.sin(idleBounceAngle)*0.7;
+      }
+      for(let y=0; y<ballDotMap.length; y++) {
+        for(let x=0; x<ballDotMap.length; x++) {
+          if(ballDotMap[y][x]){
+            drawPixel(
+              Math.round(ball.x + x-ballR),
+              Math.round(cy + y-ballR),
+              'rgba(110,220,255,0.90)'
+            );
+          }
         }
+      }
+    }
 
-        // Draw ground
-        function drawGround() {
-            ctx.fillStyle = '#6b4f4f'; // Earth color
-            ctx.fillRect(0, groundY * PIXEL_SIZE, canvas.width, (BASE_HEIGHT - groundY) * PIXEL_SIZE);
-
-            // Add pixel texture to the ground
-            for (let y = groundY; y < BASE_HEIGHT; y++) {
-                for (let x = 0; x < BASE_WIDTH; x++) {
-                    if (Math.random() < 0.1) { // 10% chance for darker pixel
-                        drawPixel(ctx, x, y, '#5a4242');
-                    }
-                }
-            }
+    function drawGround() {
+      for(let y=GRID_H-10; y<GRID_H; y++) {
+        for(let x=0; x<GRID_W; x++) {
+          drawPixel(x, y, (x+y)%3===0?'#5a4242':'#6a5050');
         }
+      }
+    }
 
-        // Draw traps, stairs, blackhole
-        function drawObstacles() {
-            obstacles.forEach(obj => {
-                if (obj.type === 'spike') {
-                    // Spike trap (triangle)
-                    ctx.fillStyle = '#ff4500'; // Orange
-                    ctx.beginPath();
-                    ctx.moveTo(obj.x * PIXEL_SIZE, obj.y * PIXEL_SIZE);
-                    ctx.lineTo((obj.x + obj.width / 2) * PIXEL_SIZE, (obj.y - obj.height) * PIXEL_SIZE);
-                    ctx.lineTo((obj.x + obj.width) * PIXEL_SIZE, obj.y * PIXEL_SIZE);
-                    ctx.closePath();
-                    ctx.fill();
-                } else if (obj.type === 'pit') {
-                    // Pit trap (black rectangle)
-                    ctx.fillStyle = '#1a1a1a'; // Black
-                    ctx.fillRect(obj.x * PIXEL_SIZE, obj.y * PIXEL_SIZE, obj.width * PIXEL_SIZE, obj.height * PIXEL_SIZE);
-                } else if (obj.type === 'stair') {
-                    // Stair (grey rectangle)
-                    ctx.fillStyle = '#888888'; // Grey
-                    ctx.fillRect(obj.x * PIXEL_SIZE, obj.y * PIXEL_SIZE, obj.width * PIXEL_SIZE, obj.height * PIXEL_SIZE);
-                } else if (obj.type === 'blackhole') {
-                    // Blackhole (black circle)
-                    ctx.fillStyle = '#000000'; // Black
-                    ctx.beginPath();
-                    ctx.arc((obj.x + obj.width / 2) * PIXEL_SIZE, (obj.y + obj.height / 2) * PIXEL_SIZE, (obj.width / 2) * PIXEL_SIZE, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Swirl effect around blackhole (pixels)
-                    for (let i = 0; i < 50; i++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const dist = Math.random() * (obj.width / 2 + 5); // Slightly larger than blackhole
-                        const px = (obj.x + obj.width / 2 + Math.cos(angle) * dist) * PIXEL_SIZE;
-                        const py = (obj.y + obj.height / 2 + Math.sin(angle) * dist) * PIXEL_SIZE;
-                        drawPixel(ctx, px / PIXEL_SIZE, py / PIXEL_SIZE, `rgba(0,0,0, ${0.5 + Math.random() * 0.5})`);
-                    }
-                }
-            });
+    function drawObstacles() {
+      for(const o of obstacles) {
+        if(o.type==='spike') {
+          // 삼각형(스파이크)
+          ctx.fillStyle = '#ff5400';
+          ctx.beginPath();
+          ctx.moveTo(o.x*DOT, (o.y+o.h)*DOT);
+          ctx.lineTo((o.x+o.w/2)*DOT, o.y*DOT);
+          ctx.lineTo((o.x+o.w)*DOT, (o.y+o.h)*DOT);
+          ctx.closePath();
+          ctx.fill();
+        } else if(o.type==='pit') {
+          // 검정 구덩이
+          ctx.fillStyle = '#181a20';
+          ctx.fillRect(o.x*DOT, (o.y+o.h/2)*DOT, o.w*DOT, o.h*DOT/2);
+        } else if(o.type==='stair') {
+          // 계단
+          ctx.fillStyle = '#bebebe';
+          ctx.fillRect(o.x*DOT, o.y*DOT, o.w*DOT, o.h*DOT);
+          // 계단 도트 질감
+          for(let i=0; i<o.w*o.h/3; i++){
+            drawPixel(
+              Math.floor(o.x+Math.random()*o.w),
+              Math.floor(o.y+Math.random()*o.h),
+              '#a0a0a0'
+            );
+          }
         }
+      }
+    }
 
-        // --- Game logic functions ---
+    function drawBlackhole() {
+      // 검은 원 + 회오리 효과
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc((blackhole.x+blackhole.w/2)*DOT, (blackhole.y+blackhole.h/2)*DOT, blackhole.w*DOT/2, 0, 2*Math.PI);
+      ctx.fillStyle="#000";
+      ctx.shadowColor="#4ff";
+      ctx.shadowBlur=6;
+      ctx.fill();
+      ctx.restore();
+      // 회오리 도트
+      for(let i=0; i<30; i++){
+        let a = Math.random()*2*Math.PI;
+        let d = (blackhole.w/2)+Math.random()*4;
+        let px = Math.round(blackhole.x+blackhole.w/2 + Math.cos(a)*d);
+        let py = Math.round(blackhole.y+blackhole.h/2 + Math.sin(a)*d);
+        drawPixel(px, py, `rgba(0,0,0,${0.5+Math.random()*0.4})`);
+      }
+    }
 
-        // Initialize game
-        function initializeGame() {
-            jellyBall.x = BASE_WIDTH / 2;
-            jellyBall.y = groundY - jellyBall.radius;
-            jellyBall.velocityY = 0;
-            jellyBall.isMovingLeft = false;
-            jellyBall.isMovingRight = false;
-            jellyBall.onGround = false;
-            jellyBall.isBouncingIdle = true; // Always bounce before game starts
-            currentStage = 1;
-            gameOver = false;
-            gameStarted = false;
-            gameMessage.style.display = 'none';
-            stageInfo.textContent = `Stage: ${currentStage} / ${MAX_STAGES}`;
-            generateStage();
+    // --- 충돌 처리 ---
+    function checkCollide(a, b) {
+      // AABB
+      let l1 = ball.x-ballR, r1 = ball.x+ballR, t1 = ball.y-ballR, b1 = ball.y+ballR;
+      let l2 = b.x, r2 = b.x+b.w, t2 = b.y, b2 = b.y+b.h;
+      return l1 < r2 && r1 > l2 && t1 < b2 && b1 > t2;
+    }
+
+    // --- 게임 루프 ---
+    function update() {
+      if(gameState==='ready'||gameState==='over'||gameState==='clear'||gameState==='allclear'){
+        idleBounceAngle += 0.13;
+        if(idleBounceAngle>Math.PI*2) idleBounceAngle-=Math.PI*2;
+        ball.onGround = (ball.y+ballR>=GRID_H-10);
+        if(ball.onGround) ball.y = GRID_H-10-ballR;
+        return;
+      }
+      // 중력
+      ball.vy += 0.18;
+      ball.y += ball.vy;
+      // 좌우 이동
+      if(inputLeft)  ball.x -= 1.05;
+      if(inputRight) ball.x += 1.05;
+      // 경계 체크
+      if(ball.x-ballR<0) ball.x=ballR;
+      if(ball.x+ballR>GRID_W) ball.x=GRID_W-ballR;
+      // 바닥
+      if(ball.y+ballR>=GRID_H-10) {
+        ball.y = GRID_H-10-ballR;
+        if(Math.abs(ball.vy)>0.7) ball.vy *= -0.8;
+        else {
+          ball.vy = 0;
+          ball.onGround = true;
         }
-
-        // Generate stage
-        function generateStage() {
-            obstacles = [];
-            const groundLevel = groundY; // Ground Y position
-
-            // Generate blackhole (always present)
-            const blackholeWidth = 10;
-            const blackholeHeight = 10;
-            let blackholeX = Math.floor(Math.random() * (BASE_WIDTH - blackholeWidth - 20)) + 10; // Keep away from edges
-            let blackholeY = groundLevel - blackholeHeight; // Can be on ground or on stairs
-            obstacles.push({ type: 'blackhole', x: blackholeX, y: blackholeY, width: blackholeWidth, height: blackholeHeight });
-
-            // Generate obstacles (spikes, pits, stairs)
-            const numObstacles = 5 + currentStage; // More obstacles with higher stages
-            for (let i = 0; i < numObstacles; i++) {
-                const type = ['spike', 'pit', 'stair'][Math.floor(Math.random() * 3)];
-                let obsX = Math.floor(Math.random() * (BASE_WIDTH - 20)) + 10;
-                let obsY = groundLevel;
-                let obsWidth = 0;
-                let obsHeight = 0;
-
-                if (type === 'spike') {
-                    obsWidth = Math.floor(Math.random() * 5) + 3; // 3-7 pixel width
-                    obsHeight = Math.floor(Math.random() * 3) + 3; // 3-5 pixel height
-                    obsY = groundLevel; // Spikes are on the ground
-                } else if (type === 'pit') {
-                    obsWidth = Math.floor(Math.random() * 8) + 5; // 5-12 pixel width
-                    obsHeight = 10; // Pit depth
-                    obsY = groundLevel; // Pits are on the ground
-                } else if (type === 'stair') {
-                    obsWidth = Math.floor(Math.random() * 8) + 5; // 5-12 pixel width
-                    obsHeight = Math.floor(Math.random() * 10) + 5; // 5-15 pixel height
-                    obsY = groundLevel - obsHeight; // Stairs rise from the ground
-                }
-
-                // Adjust to avoid overlapping with blackhole
-                const overlap = obstacles.some(existingObs => {
-                    if (existingObs.type === 'blackhole') {
-                        // Calculate distance between blackhole and new obstacle
-                        const dist = Math.sqrt(
-                            Math.pow((obsX + obsWidth / 2) - (existingObs.x + existingObs.width / 2), 2) +
-                            Math.pow((obsY + obsHeight / 2) - (existingObs.y + existingObs.height / 2), 2)
-                        );
-                        // Consider it overlapping if too close (approximate bounding box)
-                        return dist < (obsWidth / 2 + existingObs.width / 2 + 10); // 10 pixel buffer
-                    }
-                    return false;
-                });
-
-                if (!overlap) {
-                    obstacles.push({ type: type, x: obsX, y: obsY, width: obsWidth, height: obsHeight });
-                }
+        ball.idleBounce = true;
+      } else {
+        ball.onGround = false;
+        ball.idleBounce = false;
+      }
+      // 장애물 충돌
+      for(const o of obstacles) {
+        if(checkCollide(ball,o)) {
+          if(o.type==='spike') {
+            setMsg('Game Over! (스파이크)', 'red');
+            gameState='over';
+            return;
+          } else if(o.type==='pit') {
+            setMsg('Game Over! (구덩이)', 'red');
+            gameState='over';
+            return;
+          } else if(o.type==='stair') {
+            // 위에서 착지
+            if(ball.y+ballR-ball.vy<o.y) {
+              ball.y = o.y-ballR;
+              ball.vy = -3.2;
+              ball.onGround = true;
             }
-
-            // Ensure blackhole is always reachable by guaranteeing a stair near it
-            let hasStairToBlackhole = false;
-            for (let i = 0; i < obstacles.length; i++) {
-                if (obstacles[i].type === 'stair') {
-                    const stair = obstacles[i];
-                    const blackhole = obstacles.find(o => o.type === 'blackhole');
-                    if (blackhole && Math.abs((stair.x + stair.width / 2) - (blackhole.x + blackhole.width / 2)) < 30 &&
-                        stair.y >= blackhole.y) { // Stair is lower or at the same height as blackhole
-                        hasStairToBlackhole = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!hasStairToBlackhole && currentStage > 1) { // First stage doesn't require a stair
-                const blackhole = obstacles.find(o => o.type === 'blackhole');
-                if (blackhole) {
-                    const stairWidth = Math.floor(Math.random() * 8) + 5;
-                    const stairHeight = Math.floor(Math.random() * 10) + 5;
-                    const stairX = blackhole.x + Math.floor(Math.random() * 20) - 10; // Near blackhole
-                    const stairY = groundLevel - stairHeight;
-                    obstacles.push({ type: 'stair', x: stairX, y: stairY, width: stairWidth, height: stairHeight });
-                }
-            }
+          }
         }
-
-
-        // Collision detection function (AABB collision for simplicity, considering jelly ball as AABB)
-        function checkCollision(objA, objB) {
-            const ballLeft = jellyBall.x - jellyBall.radius;
-            const ballRight = jellyBall.x + jellyBall.radius;
-            const ballTop = jellyBall.y - jellyBall.radius;
-            const ballBottom = jellyBall.y + jellyBall.radius;
-
-            const objLeft = objB.x;
-            const objRight = objB.x + objB.width;
-            const objTop = objB.y;
-            const objBottom = objB.y + objB.height;
-
-            return ballLeft < objRight &&
-                   ballRight > objLeft &&
-                   ballTop < objBottom &&
-                   ballBottom > objTop;
+      }
+      // 블랙홀
+      if(checkCollide(ball,blackhole)) {
+        if(stage<maxStage) {
+          stage++;
+          setMsg('Stage Clear!', '#00ff90');
+          gameState='clear';
+          setTimeout(()=>{
+            gameState='play';
+            resetBall();
+            makeStage();
+            stageInfo.textContent = `Stage: ${stage} / ${maxStage}`;
+            hideMsg();
+          },1300);
+        } else {
+          setMsg('축하합니다! All Clear!', 'gold');
+          gameState='allclear';
         }
+      }
+    }
 
-        // Game update
-        function updateGame() {
-            if (gameOver || !gameStarted) {
-                // When game over or not started, only maintain idle bounce
-                if (jellyBall.isBouncingIdle) {
-                    jellyBall.onGround = (jellyBall.y + jellyBall.radius >= groundY);
-                    if (jellyBall.onGround) {
-                        jellyBall.y = groundY - jellyBall.radius; // Fix to ground
-                    }
-                }
-                return;
-            }
+    function draw() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      drawGround();
+      drawObstacles();
+      drawBlackhole();
+      drawJellyBall();
+    }
 
-            // Apply gravity
-            jellyBall.velocityY += jellyBall.gravity;
-            jellyBall.y += jellyBall.velocityY;
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
 
-            // Left/right movement
-            if (jellyBall.isMovingLeft) {
-                jellyBall.x -= jellyBall.moveSpeed;
-            }
-            if (jellyBall.isMovingRight) {
-                jellyBall.x += jellyBall.moveSpeed;
-            }
+    // --- 메시지 ---
+    function setMsg(msg, color='#fff') {
+      message.textContent = msg;
+      message.style.color = color;
+      message.style.display = 'block';
+    }
+    function hideMsg() { message.style.display = 'none'; }
 
-            // Screen boundary collision
-            if (jellyBall.x - jellyBall.radius < 0) {
-                jellyBall.x = jellyBall.radius;
-            }
-            if (jellyBall.x + jellyBall.radius > BASE_WIDTH) {
-                jellyBall.x = BASE_WIDTH - jellyBall.radius;
-            }
-
-            // Ground collision
-            if (jellyBall.y + jellyBall.radius >= groundY) {
-                jellyBall.y = groundY - jellyBall.radius;
-                jellyBall.velocityY = -jellyBall.velocityY * 0.85; // Bounce (increased elasticity)
-                if (Math.abs(jellyBall.velocityY) < 0.5) { // Stop if too weak
-                    jellyBall.velocityY = 0;
-                    jellyBall.onGround = true;
-                }
-                jellyBall.isBouncingIdle = true; // Start idle bounce when on ground
-            } else {
-                jellyBall.onGround = false;
-                jellyBall.isBouncingIdle = false; // Stop idle bounce when in air
-            }
-
-            // Obstacle collision detection
-            obstacles.forEach(obj => {
-                if (checkCollision(jellyBall, obj)) {
-                    if (obj.type === 'spike') {
-                        // Spike trap: Game Over
-                        setGameOver('Game Over! (Spikes)');
-                    } else if (obj.type === 'pit') {
-                        // Pit trap: Game Over
-                        setGameOver('Game Over! (Pit)');
-                    } else if (obj.type === 'stair') {
-                        // Stair: Jump if falling onto it
-                        if (jellyBall.y + jellyBall.radius - jellyBall.velocityY < obj.y) { // Falling onto stair from above
-                            jellyBall.y = obj.y - jellyBall.radius;
-                            jellyBall.velocityY = -jellyBall.jumpPower * 0.8; // Bounce off stair
-                            jellyBall.onGround = true;
-                        }
-                    } else if (obj.type === 'blackhole') {
-                        // Blackhole: Stage Clear
-                        if (currentStage < MAX_STAGES) {
-                            currentStage++;
-                            stageInfo.textContent = `Stage: ${currentStage} / ${MAX_STAGES}`;
-                            setGameMessage('Stage Clear!', 'green');
-                            setTimeout(() => {
-                                gameMessage.style.display = 'none';
-                                jellyBall.x = BASE_WIDTH / 2;
-                                jellyBall.y = groundY - jellyBall.radius;
-                                jellyBall.velocityY = 0;
-                                generateStage();
-                            }, 1500); // Next stage after 1.5 seconds
-                        } else {
-                            setGameOver('You Won the Game!', 'gold');
-                        }
-                    }
-                }
-            });
+    // --- 입력 처리 ---
+    document.addEventListener('keydown', e=>{
+      if(e.repeat) return;
+      if(gameState==='ready' && (e.code==='Space'||e.key===' ')){
+        gameState='play'; hideMsg(); ball.idleBounce=false;
+        return;
+      }
+      if(gameState==='over' && (e.code==='Space'||e.key===' ')){
+        restart();
+        return;
+      }
+      if(gameState==='play') {
+        if(e.key==='ArrowLeft') inputLeft=true;
+        if(e.key==='ArrowRight') inputRight=true;
+        if(e.key==='ArrowUp' && ball.onGround){
+          ball.vy = -4.7;
+          ball.onGround = false; ball.idleBounce=false;
         }
+      }
+    });
+    document.addEventListener('keyup', e=>{
+      if(e.key==='ArrowLeft') inputLeft=false;
+      if(e.key==='ArrowRight') inputRight=false;
+    });
 
-        // Set Game Over message
-        function setGameOver(message, color = 'red') {
-            gameOver = true;
-            gameMessage.textContent = message + (color === 'red' ? ' Press Space/Touch to Restart' : '');
-            gameMessage.style.color = color;
-            gameMessage.style.display = 'block';
-            jellyBall.isBouncingIdle = true; // Maintain idle bounce even when game over
+    // 모바일 터치 컨트롤
+    canvas.addEventListener('touchstart', e=>{
+      e.preventDefault();
+      if(gameState==='ready') {
+        gameState='play'; hideMsg(); ball.idleBounce=false;
+        return;
+      }
+      if(gameState==='over') { restart(); return; }
+      if(gameState==='play') {
+        const rect = canvas.getBoundingClientRect();
+        let tx = e.touches[0].clientX - rect.left;
+        if(tx < rect.width/2) { inputLeft=true; inputRight=false; }
+        else { inputRight=true; inputLeft=false; }
+        // 젤리공 근처 터치로 점프
+        let scaleX = GRID_W / rect.width, scaleY = GRID_H / rect.height;
+        let cx = (e.touches[0].clientX - rect.left) * scaleX;
+        let cy = (e.touches[0].clientY - rect.top) * scaleY;
+        let dist = Math.sqrt((cx-ball.x)**2+(cy-ball.y)**2);
+        if(dist<ballR+3 && ball.onGround) {
+          ball.vy = -4.7; ball.onGround=false; ball.idleBounce=false; inputLeft=false; inputRight=false;
         }
+      }
+    }, {passive:false});
+    canvas.addEventListener('touchend', e=>{
+      inputLeft=false; inputRight=false;
+    });
 
-        // Set game message (e.g., Stage Clear)
-        function setGameMessage(message, color = 'white') {
-            gameMessage.textContent = message;
-            gameMessage.style.color = color;
-            gameMessage.style.display = 'block';
-        }
+    // --- 시작/재시작 ---
+    function restart() {
+      stage=1; gameState='play';
+      resetBall(); makeStage();
+      stageInfo.textContent = `Stage: ${stage} / ${maxStage}`;
+      hideMsg();
+    }
 
-        // Game loop
-        function animate() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
+    // --- 게임 시작 ---
+    function gameInit() {
+      resetBall();
+      makeStage();
+      gameState='ready';
+      setMsg('스페이스 또는 터치로 시작!', '#fff');
+      stageInfo.textContent = `Stage: ${stage} / ${maxStage}`;
+      loop();
+    }
 
-            updateGame();
-            drawGround();
-            drawObstacles();
-            drawJellyBall();
-
-            requestAnimationFrame(animate);
-        }
-
-        // --- Event Listeners ---
-
-        // Keyboard input (PC)
-        document.addEventListener('keydown', (e) => {
-            if (gameOver && (e.code === 'Space' || e.key === ' ')) {
-                initializeGame();
-                gameStarted = true; // Restart game
-                return;
-            }
-            if (!gameStarted && (e.code === 'Space' || e.key === ' ')) {
-                gameStarted = true;
-                gameMessage.style.display = 'none';
-                jellyBall.isBouncingIdle = false; // Stop idle bounce when game starts
-                return;
-            }
-
-            if (!gameOver && gameStarted) {
-                if (e.key === 'ArrowLeft') {
-                    jellyBall.isMovingLeft = true;
-                } else if (e.key === 'ArrowRight') {
-                    jellyBall.isMovingRight = true;
-                } else if (e.key === 'ArrowUp' && jellyBall.onGround) { // Jump with Up Arrow
-                    jellyBall.velocityY = jellyBall.jumpPower;
-                    jellyBall.onGround = false;
-                    jellyBall.isBouncingIdle = false; // Stop idle bounce when jumping
-                }
-            }
-        });
-
-        document.addEventListener('keyup', (e) => {
-            if (!gameOver && gameStarted) {
-                if (e.key === 'ArrowLeft') {
-                    jellyBall.isMovingLeft = false;
-                } else if (e.key === 'ArrowRight') {
-                    jellyBall.isMovingRight = false;
-                }
-            }
-        });
-
-        // Touch input (Mobile)
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault(); // Prevent default scrolling
-
-            if (gameOver) {
-                initializeGame();
-                gameStarted = true; // Restart game
-                return;
-            }
-            if (!gameStarted) {
-                gameStarted = true;
-                gameMessage.style.display = 'none';
-                jellyBall.isBouncingIdle = false; // Stop idle bounce when game starts
-                return;
-            }
-
-            if (!gameOver && gameStarted) {
-                const touchX = e.touches[0].clientX;
-                const touchY = e.touches[0].clientY;
-                const canvasRect = canvas.getBoundingClientRect();
-
-                // Convert touch coordinates to canvas pixel coordinates
-                const scaleX = BASE_WIDTH / canvasRect.width;
-                const scaleY = BASE_HEIGHT / canvasRect.height;
-                const canvasTouchX = (touchX - canvasRect.left) * scaleX;
-                const canvasTouchY = (touchY - canvasRect.top) * scaleY;
-
-                // Check if touch is on the jelly ball for jumping
-                const distToJellyBall = Math.sqrt(
-                    Math.pow(canvasTouchX - jellyBall.x, 2) +
-                    Math.pow(canvasTouchY - jellyBall.y, 2)
-                );
-
-                if (distToJellyBall < jellyBall.radius + 5 && jellyBall.onGround) { // 5 pixel tolerance for touch
-                    jellyBall.velocityY = jellyBall.jumpPower;
-                    jellyBall.onGround = false;
-                    jellyBall.isBouncingIdle = false; // Stop idle bounce when jumping
-                    jellyBall.isMovingLeft = false; // Stop horizontal movement on jump
-                    jellyBall.isMovingRight = false;
-                } else {
-                    // Otherwise, handle left/right movement based on touch position
-                    const relativeX = touchX - canvasRect.left;
-                    if (relativeX < canvasRect.width / 2) {
-                        jellyBall.isMovingLeft = true;
-                        jellyBall.isMovingRight = false;
-                    } else {
-                        jellyBall.isMovingRight = true;
-                        jellyBall.isMovingLeft = false;
-                    }
-                }
-            }
-        });
-
-        canvas.addEventListener('touchend', (e) => {
-            e.preventDefault(); // Prevent default scrolling
-            jellyBall.isMovingLeft = false;
-            jellyBall.isMovingRight = false;
-        });
-
-        // Initial start message
-        window.onload = () => {
-            initializeGame();
-            setGameMessage('Press Space or Touch to Start', 'white');
-            animate(); // Start game loop
-        };
-
-        // Window resize event (CSS handles responsive scaling)
-        window.addEventListener('resize', () => {
-            // Canvas scaling logic is fixed by PIXEL_SIZE and BASE_WIDTH/HEIGHT,
-            // so CSS max-width/max-height and aspect-ratio handle responsiveness.
-            // No additional JS scaling is needed here.
-        });
-
-    </script>
+    window.onload = gameInit;
+  </script>
 </body>
 </html>
