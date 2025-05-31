@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>젤리공 바운스 미니게임</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=640, user-scalable=no">
   <style>
     html, body {
       margin: 0; padding: 0; box-sizing: border-box;
@@ -64,10 +64,9 @@
     const ctx = canvas.getContext('2d');
     const stageInfo = document.getElementById('stage-info');
     const message = document.getElementById('message');
-    // 도트 픽셀 사이즈, 전체 도트 그리드 크기
     const DOT = 4;
-    const GRID_W = canvas.width / DOT;   // 160
-    const GRID_H = canvas.height / DOT;  // 120
+    const GRID_W = canvas.width / DOT;
+    const GRID_H = canvas.height / DOT;
 
     // --- 젤리공 도트맵 생성 ---
     function makeJellyDotMap(r) {
@@ -92,7 +91,15 @@
     const ballDotMap = makeJellyDotMap(ballR);
     let ball = {};
     let inputLeft = false, inputRight = false;
-    let idleBounceAngle = 0; // idle 바운스 효과
+    let idleBounceAngle = 0;
+
+    // 젤리공 시작 위치는 항상 중앙 하단 (안전지대)
+    const SAFE_ZONE = {
+      x1: Math.floor(GRID_W/2) - ballR - 3,
+      y1: GRID_H - 10 - ballR - 2,
+      x2: Math.floor(GRID_W/2) + ballR + 3,
+      y2: GRID_H - 10 + ballR + 2
+    };
 
     // --- 오브젝트 생성 ---
     function resetBall() {
@@ -106,46 +113,78 @@
       };
     }
 
+    // --- 안전영역 충돌 체크 ---
+    function isInSafeZone(obj) {
+      // obj={x,y,w,h}
+      return !(
+        obj.x + obj.w < SAFE_ZONE.x1 ||
+        obj.x > SAFE_ZONE.x2 ||
+        obj.y + obj.h < SAFE_ZONE.y1 ||
+        obj.y > SAFE_ZONE.y2
+      );
+    }
+
     // --- 장애물/블랙홀/계단 생성 ---
     function makeStage() {
       obstacles = [];
-      // 블랙홀(랜덤, 바닥 위)
-      const bhW = 10, bhH = 10;
-      let bhX = Math.floor(Math.random() * (GRID_W-bhW-16)) + 8;
-      let bhY = GRID_H - 10 - bhH;
+      // 계단 먼저 여러개 생성 (공중 계단 포함)
+      let stairCount = Math.floor(Math.random()*2) + 2 + Math.floor(stage/2);
+      for(let i=0; i<stairCount; i++) {
+        // y는 바닥 위~공중까지 (최소 y=30~바닥 위 10)
+        let h = Math.floor(Math.random()*5)+6;
+        let w = Math.floor(Math.random()*5)+7;
+        let y = Math.floor(Math.random()*(GRID_H-40-10))+30; // 30~(GRID_H-40)
+        let x = Math.floor(Math.random()*(GRID_W-w-12))+6;
+        obstacles.push({type:'stair', x, y, w, h});
+      }
+
+      // 그 다음 블랙홀 생성(계단 위 or 바닥)
+      let isOnStair = Math.random()<0.7; // 대부분 계단 위, 가끔 바닥
+      let bhW=10, bhH=10, bhX, bhY;
+      if(isOnStair && obstacles.length>0) {
+        // 임의의 계단 위 랜덤 위치
+        let stair = obstacles[Math.floor(Math.random()*obstacles.length)];
+        bhX = stair.x + Math.floor(Math.random()*(Math.max(1,stair.w-bhW)));
+        bhY = stair.y - bhH;
+        // 블랙홀 위치가 화면을 벗어나지 않게 조정
+        if(bhX<2) bhX=2;
+        if(bhX+bhW>GRID_W-2) bhX = GRID_W-bhW-2;
+        if(bhY<5) bhY=5;
+      } else {
+        // 바닥 위 랜덤, 젤리공 출발 안전지대와 겹치지 않게
+        do {
+          bhX = Math.floor(Math.random()*(GRID_W-bhW-16))+8;
+          bhY = GRID_H - 10 - bhH;
+        } while (
+          bhX+bhW > SAFE_ZONE.x1-5 && bhX < SAFE_ZONE.x2+5 &&
+          bhY+bhH > SAFE_ZONE.y1-5 && bhY < SAFE_ZONE.y2+5
+        );
+      }
       blackhole = {x: bhX, y: bhY, w: bhW, h: bhH};
 
-      // 장애물(스파이크, 구덩이, 계단)
+      // 이제 스파이크, 구덩이 생성 (젤리공 안전지대와 절대 안 겹침)
       let tries = 0;
-      while(obstacles.length < 5+stage && tries++<50) {
+      let numObs = 5 + stage;
+      while(obstacles.filter(o=>o.type!=='stair').length < numObs && tries++<80) {
         const t = Math.random();
-        let type = t<0.35 ? 'spike' : t<0.7 ? 'pit' : 'stair';
+        let type = t<0.5 ? 'spike' : 'pit';
         let w = type==='spike' ? Math.floor(Math.random()*3)+4 : Math.floor(Math.random()*5)+7;
-        let h = type==='spike' ? Math.floor(Math.random()*2)+4 : type==='stair' ? Math.floor(Math.random()*5)+6 : 10;
+        let h = type==='spike' ? Math.floor(Math.random()*2)+4 : 10;
+        let y = GRID_H-10-h;
         let x = Math.floor(Math.random()*(GRID_W-w-12))+6;
-        let y = type==='stair' ? GRID_H-10-h : GRID_H-10-h;
+        let obj = {type, x, y, w, h};
+        // 젤리공 안전지대와 겹치면 무효
+        if(isInSafeZone(obj)) continue;
         // 블랙홀과 너무 가까우면 무효
-        if(type!=='stair' && 
-          x+w > blackhole.x-10 && x < blackhole.x+blackhole.w+10) continue;
+        if(
+          x+w > blackhole.x-6 && x < blackhole.x+blackhole.w+6 &&
+          y+h > blackhole.y-6 && y < blackhole.y+blackhole.h+6
+        ) continue;
         // 겹치는지 체크
         let overlap = obstacles.some(o => 
-          x+w > o.x-2 && x < o.x+o.w+2 && y+h > o.y-2 && y < o.y+o.h+2
+          x+w > o.x-2 && x < o.x+o.w+2 && y+h > o.y-2 && y < o.y+o.h+2 && o.type!=='stair'
         );
-        if(!overlap) obstacles.push({type, x, y, w, h});
-      }
-      // 블랙홀 근처에 계단 없으면 추가(2스테이지 이상)
-      if(stage>1) {
-        let hasStair = obstacles.some(o =>
-          o.type==='stair' &&
-          Math.abs(o.x+o.w/2 - (blackhole.x+blackhole.w/2)) < 18 &&
-          o.y >= blackhole.y
-        );
-        if(!hasStair) {
-          let stairW = Math.floor(Math.random()*5)+7, stairH = Math.floor(Math.random()*5)+7;
-          let stairX = blackhole.x + Math.floor(Math.random()*8)-4;
-          let stairY = GRID_H-10-stairH;
-          obstacles.push({type:'stair', x:stairX, y:stairY, w:stairW, h:stairH});
-        }
+        if(!overlap) obstacles.push(obj);
       }
     }
 
@@ -157,7 +196,6 @@
 
     function drawJellyBall() {
       let cy = ball.y;
-      // idle 바운스 효과
       if(ball.idleBounce && ball.onGround){
         cy += Math.sin(idleBounceAngle)*0.7;
       }
@@ -185,7 +223,6 @@
     function drawObstacles() {
       for(const o of obstacles) {
         if(o.type==='spike') {
-          // 삼각형(스파이크)
           ctx.fillStyle = '#ff5400';
           ctx.beginPath();
           ctx.moveTo(o.x*DOT, (o.y+o.h)*DOT);
@@ -194,14 +231,11 @@
           ctx.closePath();
           ctx.fill();
         } else if(o.type==='pit') {
-          // 검정 구덩이
           ctx.fillStyle = '#181a20';
           ctx.fillRect(o.x*DOT, (o.y+o.h/2)*DOT, o.w*DOT, o.h*DOT/2);
         } else if(o.type==='stair') {
-          // 계단
           ctx.fillStyle = '#bebebe';
           ctx.fillRect(o.x*DOT, o.y*DOT, o.w*DOT, o.h*DOT);
-          // 계단 도트 질감
           for(let i=0; i<o.w*o.h/3; i++){
             drawPixel(
               Math.floor(o.x+Math.random()*o.w),
@@ -214,7 +248,6 @@
     }
 
     function drawBlackhole() {
-      // 검은 원 + 회오리 효과
       ctx.save();
       ctx.beginPath();
       ctx.arc((blackhole.x+blackhole.w/2)*DOT, (blackhole.y+blackhole.h/2)*DOT, blackhole.w*DOT/2, 0, 2*Math.PI);
@@ -223,7 +256,6 @@
       ctx.shadowBlur=6;
       ctx.fill();
       ctx.restore();
-      // 회오리 도트
       for(let i=0; i<30; i++){
         let a = Math.random()*2*Math.PI;
         let d = (blackhole.w/2)+Math.random()*4;
@@ -235,7 +267,6 @@
 
     // --- 충돌 처리 ---
     function checkCollide(a, b) {
-      // AABB
       let l1 = ball.x-ballR, r1 = ball.x+ballR, t1 = ball.y-ballR, b1 = ball.y+ballR;
       let l2 = b.x, r2 = b.x+b.w, t2 = b.y, b2 = b.y+b.h;
       return l1 < r2 && r1 > l2 && t1 < b2 && b1 > t2;
@@ -272,24 +303,25 @@
         ball.onGround = false;
         ball.idleBounce = false;
       }
-      // 장애물 충돌
+      // 계단 충돌 (상단에서만)
       for(const o of obstacles) {
-        if(checkCollide(ball,o)) {
-          if(o.type==='spike') {
-            setMsg('Game Over! (스파이크)', 'red');
-            gameState='over';
-            return;
-          } else if(o.type==='pit') {
-            setMsg('Game Over! (구덩이)', 'red');
-            gameState='over';
-            return;
-          } else if(o.type==='stair') {
-            // 위에서 착지
+        if(o.type==='stair') {
+          if(checkCollide(ball,o)) {
             if(ball.y+ballR-ball.vy<o.y) {
               ball.y = o.y-ballR;
               ball.vy = -3.2;
               ball.onGround = true;
             }
+          }
+        }
+      }
+      // 장애물 충돌
+      for(const o of obstacles) {
+        if(o.type==='spike' || o.type==='pit') {
+          if(checkCollide(ball,o)) {
+            setMsg(o.type==='spike'?'Game Over! (스파이크)':'Game Over! (구덩이)', 'red');
+            gameState='over';
+            return;
           }
         }
       }
@@ -305,7 +337,7 @@
             makeStage();
             stageInfo.textContent = `Stage: ${stage} / ${maxStage}`;
             hideMsg();
-          },1300);
+          },1200);
         } else {
           setMsg('축하합니다! All Clear!', 'gold');
           gameState='allclear';
@@ -373,7 +405,6 @@
         let tx = e.touches[0].clientX - rect.left;
         if(tx < rect.width/2) { inputLeft=true; inputRight=false; }
         else { inputRight=true; inputLeft=false; }
-        // 젤리공 근처 터치로 점프
         let scaleX = GRID_W / rect.width, scaleY = GRID_H / rect.height;
         let cx = (e.touches[0].clientX - rect.left) * scaleX;
         let cy = (e.touches[0].clientY - rect.top) * scaleY;
@@ -387,7 +418,7 @@
       inputLeft=false; inputRight=false;
     });
 
-    // --- 시작/재시작 ---
+    // 시작/재시작
     function restart() {
       stage=1; gameState='play';
       resetBall(); makeStage();
@@ -395,7 +426,6 @@
       hideMsg();
     }
 
-    // --- 게임 시작 ---
     function gameInit() {
       resetBall();
       makeStage();
